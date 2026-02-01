@@ -565,6 +565,35 @@
                 document.getElementById('preview-content-text').innerHTML = marked.parse(this.value);
             });
             
+             // Custom Renderer
+            const renderer = new marked.Renderer();
+            
+            // Image Renderer
+            renderer.image = function(href, title, text) {
+                return `<img src="${href}" alt="${text}" title="${title || ''}" class="max-w-full h-auto rounded-lg shadow-md my-4 mx-auto block" onerror="this.style.display='none'; this.insertAdjacentHTML('afterend', '<p class=\\'text-red-400 text-xs italic text-center\\'>[ইমেজ লোড ব্যর্থ: সঠিক URL দিন]</p>')">`;
+            };
+
+            // Link Renderer
+            renderer.link = function(href, title, text) {
+                return `<a href="${href}" title="${title || ''}" target="_blank" class="text-blue-600 hover:underline break-words">${text}</a>`;
+            };
+            
+            // Table Renderer
+            renderer.table = function(header, body) {
+                return `<div class="overflow-x-auto my-4 rounded-lg border border-gray-200 dark:border-gray-700">
+                            <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                                <thead class="bg-gray-50 dark:bg-gray-800">${header}</thead>
+                                <tbody class="bg-white dark:bg-gray-900 divide-y divide-gray-200 dark:divide-gray-700">${body}</tbody>
+                            </table>
+                        </div>`;
+            };
+
+            marked.setOptions({
+                renderer: renderer,
+                gfm: true,
+                breaks: true
+            });
+
             // Debounced Save Helper
             window.debouncedSave = function() {
                 if(saveDataTimeout) clearTimeout(saveDataTimeout);
@@ -674,10 +703,17 @@
                 const isSelected = selectedIds.has(sub.id);
                 const el = document.createElement('div');
                 const isHidden = sub.isOptional && !showOptional && isEditMode;
+                
+                // Apply specific style for group optional subjects
                 let extraClass = '';
-                if (sub.isGroupOptional) { extraClass = 'group-optional border-dashed border-2'; }
+                if (sub.isGroupOptional) {
+                    extraClass = 'group-optional border-dashed border-2';
+                }
+                
                 el.className = `bg-white dark:bg-gray-900 p-4 rounded-xl border ${isSelected?'border-indigo-500 ring-2 ring-indigo-500/20':'border-gray-100 dark:border-gray-800'} hover:shadow-md cursor-pointer transition relative group select-none ${isHidden ? 'is-hidden-subject' : ''} ${extraClass}`;
                 
+                // FIX: Use manual event listener instead of HTML onclick for complex drag logic inside loop
+                // This ensures closure context is correct
                 if(isEditMode) {
                     el.draggable = true;
                     el.addEventListener('click', (e) => { 
@@ -685,9 +721,18 @@
                         toggleSelection(sub.id); 
                         renderSubjects(); 
                     });
-                    el.addEventListener('dragstart', (e) => { dragSrcId = sub.id; e.target.classList.add('dragging'); });
-                    el.addEventListener('dragend', (e) => { e.target.classList.remove('dragging'); });
+                    
+                    el.addEventListener('dragstart', (e) => { 
+                        dragSrcId = sub.id; 
+                        e.target.classList.add('dragging'); 
+                    });
+                    
+                    el.addEventListener('dragend', (e) => { 
+                        e.target.classList.remove('dragging'); 
+                    });
+                    
                     el.addEventListener('dragover', (e) => { e.preventDefault(); });
+                    
                     el.addEventListener('drop', (e) => handleSubjectDrop(e, sub.id));
                 } else {
                     el.addEventListener('click', () => openReader(sub));
@@ -705,6 +750,32 @@
             container.appendChild(grid);
         }
 
+        // --- GLOBAL FUNCTIONS: BULK ACTIONS ---
+        // Moved to top level to ensure visibility
+        function bulkToggleVisibilitySubjects() {
+            if (!currentClass || !subjectsData[currentClass.id]) return;
+            subjectsData[currentClass.id].forEach(s => {
+                if(selectedIds.has(s.id)) s.isOptional = !s.isOptional;
+            });
+            selectedIds.clear();
+            saveData();
+            renderSubjects();
+        }
+
+        function bulkDeleteSubjects() {
+             openConfirmModal(`${selectedIds.size} টি বিষয় মুছতে চান?`, () => {
+                 subjectsData[currentClass.id] = subjectsData[currentClass.id].filter(s => !selectedIds.has(s.id));
+                 selectedIds.clear(); saveData(); renderSubjects();
+             });
+        }
+
+        function bulkDeleteChapters() {
+             openConfirmModal(`${selectedIds.size} টি অধ্যায় মুছতে চান?`, () => {
+                 function filter(list) { return list.filter(n => { if(selectedIds.has(n.id)) return false; if(n.children) n.children=filter(n.children); return true; }); }
+                 currentSubject.chapters = filter(currentSubject.chapters); selectedIds.clear(); saveData(); renderChapters();
+             });
+        }
+
         // --- SUBJECT DRAG & DROP LOGIC ---
         function handleSubjectDrop(e, targetId) {
             e.stopPropagation();
@@ -712,6 +783,7 @@
             const list = subjectsData[currentClass.id];
             const srcIdx = list.findIndex(s => s.id === dragSrcId);
             const tgtIdx = list.findIndex(s => s.id === targetId);
+            
             if(srcIdx > -1 && tgtIdx > -1) {
                 const [moved] = list.splice(srcIdx, 1);
                 list.splice(tgtIdx, 0, moved);
@@ -877,6 +949,7 @@
                 viewer.innerHTML = '';
                 emptyMsg.classList.add('hidden');
                 
+                // Prioritize fetching URL if exists
                 if (content.textUrl) {
                     loader.classList.remove('hidden');
                     fetchTextContent(content.textUrl)
@@ -908,85 +981,70 @@
                 grid.innerHTML = '';
                 if (content.videos && content.videos.length > 0) {
                     content.videos.forEach((v, index) => {
-                        // Apply stored resize dimensions if available
-                        const style = (v.width && v.height) ? `width: ${v.width}px; height: ${v.height}px; flex: none;` : '';
-
-                        // Create Card Container
-                        const card = document.createElement('div');
-                        card.className = `bg-black dark:bg-black rounded-lg overflow-hidden shadow-sm resizable-card relative group border border-gray-200 dark:border-gray-700`;
-                        card.style = style;
+                        let innerHTML = '';
                         
-                        // Video Container
-                        const videoContainer = document.createElement('div');
-                        videoContainer.className = "flex-grow relative overflow-hidden bg-black flex items-center justify-center";
-                        
-                        // Determine Content
+                        // Determine content type
                         if (v.id) { // YouTube
-                             const ytDiv = document.createElement('div');
-                             ytDiv.id = `yt-player-${index}`;
-                             ytDiv.className = "w-full h-full";
-                             videoContainer.appendChild(ytDiv);
+                             innerHTML = `<iframe id="yt-player-${index}" class="w-full h-full" 
+                                src="https://www.youtube.com/embed/${v.id}?enablejsapi=1&rel=0&modestbranding=1" 
+                                frameborder="0" allowfullscreen></iframe>`;
                              
-                             // Initialize YouTube Player
-                             if (window.YT && window.YT.Player) {
-                                 new YT.Player(`yt-player-${index}`, {
-                                     height: '100%',
-                                     width: '100%',
-                                     videoId: v.id,
-                                     playerVars: {
-                                         'playsinline': 1,
-                                         'start': Math.floor(v.currentTime || 0)
-                                     },
-                                     events: {
-                                         'onStateChange': (event) => {
-                                             if (event.data == YT.PlayerState.PAUSED || event.data == YT.PlayerState.ENDED) {
-                                                 v.currentTime = event.target.getCurrentTime();
-                                                 // Don't flood saves, rely on session memory or occasional save
+                             // Attach API Logic safely
+                             setTimeout(() => {
+                                 if (window.YT && window.YT.Player) {
+                                     new YT.Player(`yt-player-${index}`, {
+                                         events: {
+                                             'onStateChange': (event) => {
+                                                 if (event.data == YT.PlayerState.PAUSED || event.data == YT.PlayerState.ENDED) {
+                                                     v.currentTime = event.target.getCurrentTime();
+                                                 }
                                              }
-                                             // Auto-save interval for crash protection
-                                              if (event.data == YT.PlayerState.PLAYING) {
-                                                  // Clear any existing interval to prevent duplicates
-                                                  if(v.interval) clearInterval(v.interval);
-                                                  v.interval = setInterval(() => {
-                                                      v.currentTime = event.target.getCurrentTime();
-                                                  }, 5000);
-                                              } else {
-                                                  if(v.interval) clearInterval(v.interval);
-                                              }
                                          }
-                                     }
-                                 });
-                             }
+                                     });
+                                 }
+                             }, 1000);
                         } else if (v.url && (v.url.endsWith('.mp4') || v.url.endsWith('.webm') || v.url.startsWith('blob:'))) { 
                             // Native Video
-                            const video = document.createElement('video');
-                            video.className = "w-full h-full object-contain";
-                            video.src = v.url;
-                            video.controls = true;
-                            if(v.currentTime) video.currentTime = v.currentTime;
-                            video.addEventListener('timeupdate', () => { v.currentTime = video.currentTime; });
-                            videoContainer.appendChild(video);
+                            innerHTML = `<video id="vid-${index}" class="w-full h-full object-contain" src="${v.url}" controls></video>`;
                         } else { 
-                            videoContainer.innerHTML = `
+                            innerHTML = `
                             <div class="flex flex-col items-center justify-center h-full p-4 text-center bg-gray-100 dark:bg-gray-800 text-gray-500">
                                 <i data-lucide="external-link" class="h-8 w-8 mb-2 opacity-50"></i>
                                 <a href="${v.url}" target="_blank" class="text-indigo-600 underline font-bold text-sm">ভিডিও লিংক খুলুন</a>
                             </div>`;
                         }
-                        
-                        card.appendChild(videoContainer);
 
-                        // Footer (Title & Resize Handle)
-                        const footer = document.createElement('div');
-                        footer.className = "p-3 h-12 bg-white dark:bg-gray-900 flex items-center justify-between flex-none border-t border-gray-100 dark:border-gray-800";
-                        footer.innerHTML = `
-                            <h4 class="font-bold text-sm dark:text-white truncate w-3/4" title="${v.title}">${v.title}</h4>
-                            <div class="cursor-se-resize p-1"><i data-lucide="maximize-2" class="h-3 w-3 text-gray-400"></i></div>
+                        // Apply stored resize dimensions if available
+                        const style = (v.width && v.height) ? `width: ${v.width}px; height: ${v.height}px; flex: none;` : '';
+
+                        // Render Card
+                        const card = document.createElement('div');
+                        card.className = `bg-black dark:bg-black rounded-lg overflow-hidden shadow-sm resizable-card relative group border border-gray-200 dark:border-gray-700`;
+                        card.style = style;
+                        card.innerHTML = `
+                            <div class="flex-grow relative overflow-hidden bg-black flex items-center justify-center">
+                                ${innerHTML}
+                            </div>
+                            <div class="p-3 h-12 bg-white dark:bg-gray-900 flex items-center justify-between flex-none border-t border-gray-100 dark:border-gray-800">
+                                <h4 class="font-bold text-sm dark:text-white truncate w-3/4" title="${v.title}">${v.title}</h4>
+                                <div class="cursor-se-resize p-1"><i data-lucide="maximize-2" class="h-3 w-3 text-gray-400"></i></div>
+                            </div>
                         `;
-                        card.appendChild(footer);
+                        
                         grid.appendChild(card);
 
-                        // Size Persistence
+                        // 1. Time Persistence for Local Videos
+                        const vidEl = card.querySelector('video');
+                        if (vidEl) {
+                            if (v.currentTime) {
+                                vidEl.currentTime = v.currentTime;
+                            }
+                            vidEl.addEventListener('timeupdate', () => {
+                                v.currentTime = vidEl.currentTime;
+                            });
+                        }
+
+                        // 2. Size Persistence (ResizeObserver)
                         const resizeObserver = new ResizeObserver(entries => {
                             for (let entry of entries) {
                                 const { width, height } = entry.contentRect;
