@@ -531,14 +531,15 @@
         let expandTimer = null;
         let openAccordionIds = new Set();
         let selectedIds = new Set();
-        let saveDataTimeout = null; // Debounce for saving size
+        let saveDataTimeout = null;
 
         function init() {
-            // Check for previous data
+            // Using previous data key to maintain compatibility if user had data
             const stored = localStorage.getItem('smartPathshalaData_v2') || localStorage.getItem('smartPathshalaData');
             if (stored) {
                 subjectsData = JSON.parse(stored);
             } else {
+                // Initialize Empty Structure
                 [6,7,8,9,11].forEach(c => subjectsData[c] = []);
                 subjectsData[6] = defaultClass6Data.map((s, i) => ({
                     id: `sub_6_${Date.now()}_${i}`,
@@ -556,36 +557,27 @@
             lucide.createIcons();
             
             // Load YouTube API
-            var tag = document.createElement('script');
-            tag.src = "https://www.youtube.com/iframe_api";
-            var firstScriptTag = document.getElementsByTagName('script')[0];
-            firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
+            if (!window.YT) {
+                var tag = document.createElement('script');
+                tag.src = "https://www.youtube.com/iframe_api";
+                var firstScriptTag = document.getElementsByTagName('script')[0];
+                firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
+            }
 
             document.getElementById('input-content-text').addEventListener('input', function() {
                 document.getElementById('preview-content-text').innerHTML = marked.parse(this.value);
             });
             
-             // Custom Renderer
+            // Custom Renderer
             const renderer = new marked.Renderer();
-            
-            // Image Renderer
             renderer.image = function(href, title, text) {
                 return `<img src="${href}" alt="${text}" title="${title || ''}" class="max-w-full h-auto rounded-lg shadow-md my-4 mx-auto block" onerror="this.style.display='none'; this.insertAdjacentHTML('afterend', '<p class=\\'text-red-400 text-xs italic text-center\\'>[ইমেজ লোড ব্যর্থ: সঠিক URL দিন]</p>')">`;
             };
-
-            // Link Renderer
             renderer.link = function(href, title, text) {
                 return `<a href="${href}" title="${title || ''}" target="_blank" class="text-blue-600 hover:underline break-words">${text}</a>`;
             };
-            
-            // Table Renderer
             renderer.table = function(header, body) {
-                return `<div class="overflow-x-auto my-4 rounded-lg border border-gray-200 dark:border-gray-700">
-                            <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                                <thead class="bg-gray-50 dark:bg-gray-800">${header}</thead>
-                                <tbody class="bg-white dark:bg-gray-900 divide-y divide-gray-200 dark:divide-gray-700">${body}</tbody>
-                            </table>
-                        </div>`;
+                return `<div class="overflow-x-auto my-4 rounded-lg border border-gray-200 dark:border-gray-700"><table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700"><thead class="bg-gray-50 dark:bg-gray-800">${header}</thead><tbody class="bg-white dark:bg-gray-900 divide-y divide-gray-200 dark:divide-gray-700">${body}</tbody></table></div>`;
             };
 
             marked.setOptions({
@@ -593,13 +585,12 @@
                 gfm: true,
                 breaks: true
             });
-
+            
             // Debounced Save Helper
             window.debouncedSave = function() {
                 if(saveDataTimeout) clearTimeout(saveDataTimeout);
                 saveDataTimeout = setTimeout(() => {
                     saveData();
-                    console.log('Saved data (debounced)');
                 }, 1000);
             };
         }
@@ -703,17 +694,10 @@
                 const isSelected = selectedIds.has(sub.id);
                 const el = document.createElement('div');
                 const isHidden = sub.isOptional && !showOptional && isEditMode;
-                
-                // Apply specific style for group optional subjects
                 let extraClass = '';
-                if (sub.isGroupOptional) {
-                    extraClass = 'group-optional border-dashed border-2';
-                }
-                
+                if (sub.isGroupOptional) { extraClass = 'group-optional border-dashed border-2'; }
                 el.className = `bg-white dark:bg-gray-900 p-4 rounded-xl border ${isSelected?'border-indigo-500 ring-2 ring-indigo-500/20':'border-gray-100 dark:border-gray-800'} hover:shadow-md cursor-pointer transition relative group select-none ${isHidden ? 'is-hidden-subject' : ''} ${extraClass}`;
                 
-                // FIX: Use manual event listener instead of HTML onclick for complex drag logic inside loop
-                // This ensures closure context is correct
                 if(isEditMode) {
                     el.draggable = true;
                     el.addEventListener('click', (e) => { 
@@ -751,7 +735,6 @@
         }
 
         // --- GLOBAL FUNCTIONS: BULK ACTIONS ---
-        // Moved to top level to ensure visibility
         function bulkToggleVisibilitySubjects() {
             if (!currentClass || !subjectsData[currentClass.id]) return;
             subjectsData[currentClass.id].forEach(s => {
@@ -949,7 +932,6 @@
                 viewer.innerHTML = '';
                 emptyMsg.classList.add('hidden');
                 
-                // Prioritize fetching URL if exists
                 if (content.textUrl) {
                     loader.classList.remove('hidden');
                     fetchTextContent(content.textUrl)
@@ -983,28 +965,13 @@
                     content.videos.forEach((v, index) => {
                         let innerHTML = '';
                         
-                        // Determine content type
-                        if (v.id) { // YouTube
-                             innerHTML = `<iframe id="yt-player-${index}" class="w-full h-full" 
-                                src="https://www.youtube.com/embed/${v.id}?enablejsapi=1&rel=0&modestbranding=1" 
+                        // Use simple iframe for YouTube (Resume not supported in simple mode, but plays)
+                        if (v.id) { 
+                             innerHTML = `<iframe class="w-full h-full" 
+                                src="https://www.youtube.com/embed/${v.id}?rel=0&modestbranding=1" 
                                 frameborder="0" allowfullscreen></iframe>`;
-                             
-                             // Attach API Logic safely
-                             setTimeout(() => {
-                                 if (window.YT && window.YT.Player) {
-                                     new YT.Player(`yt-player-${index}`, {
-                                         events: {
-                                             'onStateChange': (event) => {
-                                                 if (event.data == YT.PlayerState.PAUSED || event.data == YT.PlayerState.ENDED) {
-                                                     v.currentTime = event.target.getCurrentTime();
-                                                 }
-                                             }
-                                         }
-                                     });
-                                 }
-                             }, 1000);
                         } else if (v.url && (v.url.endsWith('.mp4') || v.url.endsWith('.webm') || v.url.startsWith('blob:'))) { 
-                            // Native Video
+                            // Native Video (Resume supported)
                             innerHTML = `<video id="vid-${index}" class="w-full h-full object-contain" src="${v.url}" controls></video>`;
                         } else { 
                             innerHTML = `
@@ -1014,10 +981,8 @@
                             </div>`;
                         }
 
-                        // Apply stored resize dimensions if available
                         const style = (v.width && v.height) ? `width: ${v.width}px; height: ${v.height}px; flex: none;` : '';
 
-                        // Render Card
                         const card = document.createElement('div');
                         card.className = `bg-black dark:bg-black rounded-lg overflow-hidden shadow-sm resizable-card relative group border border-gray-200 dark:border-gray-700`;
                         card.style = style;
@@ -1026,34 +991,47 @@
                                 ${innerHTML}
                             </div>
                             <div class="p-3 h-12 bg-white dark:bg-gray-900 flex items-center justify-between flex-none border-t border-gray-100 dark:border-gray-800">
-                                <h4 class="font-bold text-sm dark:text-white truncate w-3/4" title="${v.title}">${v.title}</h4>
-                                <div class="cursor-se-resize p-1"><i data-lucide="maximize-2" class="h-3 w-3 text-gray-400"></i></div>
+                                <h4 class="font-bold text-sm dark:text-white truncate flex-1 mr-2" title="${v.title}">${v.title}</h4>
+                                <div class="flex items-center gap-2">
+                                    <button onclick="deleteVideo(${index})" class="p-1 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition" title="ডিলিট">
+                                        <i data-lucide="trash-2" class="h-4 w-4"></i>
+                                    </button>
+                                    <div class="cursor-se-resize p-1"><i data-lucide="maximize-2" class="h-3 w-3 text-gray-400"></i></div>
+                                </div>
                             </div>
                         `;
                         
                         grid.appendChild(card);
-
-                        // 1. Time Persistence for Local Videos
-                        const vidEl = card.querySelector('video');
-                        if (vidEl) {
-                            if (v.currentTime) {
-                                vidEl.currentTime = v.currentTime;
+                        
+                        // Video Time Resume (Local Only)
+                        if (v.url && (v.url.endsWith('.mp4') || v.url.endsWith('.webm') || v.url.startsWith('blob:'))) {
+                            const vidEl = card.querySelector('video');
+                            if (vidEl) {
+                                if (v.currentTime) vidEl.currentTime = v.currentTime;
+                                vidEl.addEventListener('timeupdate', () => { v.currentTime = vidEl.currentTime; });
                             }
-                            vidEl.addEventListener('timeupdate', () => {
-                                v.currentTime = vidEl.currentTime;
-                            });
                         }
 
-                        // 2. Size Persistence (ResizeObserver)
+                        // Size Persistence
                         const resizeObserver = new ResizeObserver(entries => {
                             for (let entry of entries) {
+                                // IMPORTANT: Check if dimensions are meaningful before saving to avoid overwrite on init
                                 const { width, height } = entry.contentRect;
-                                v.width = width;
-                                v.height = height;
-                                debouncedSave(); // Auto-save size changes
+                                if (width > 0 && height > 0) {
+                                    v.width = width;
+                                    v.height = height;
+                                    debouncedSave();
+                                }
                             }
                         });
                         resizeObserver.observe(card);
+                        
+                        // Add explicit mouseup listener to force save on drag end (more reliable than debounce sometimes)
+                        card.addEventListener('mouseup', () => {
+                             v.width = card.offsetWidth;
+                             v.height = card.offsetHeight;
+                             saveData();
+                        });
                     });
                     document.getElementById('empty-video-msg').classList.add('hidden');
                 } else {
