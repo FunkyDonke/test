@@ -107,11 +107,16 @@
         .dark .prose blockquote { border-color: #374151; color: #9ca3af; }
         
         /* Improved Image Floating Styles for Prose */
-        .prose .float-right { float: right; margin-left: 1.5rem; margin-bottom: 1rem; clear: right; }
-        .prose .float-left { float: left; margin-right: 1.5rem; margin-bottom: 1rem; clear: left; }
+        .prose .float-right { float: right; margin-left: 1.5rem; margin-bottom: 0.5rem; clear: right; }
+        .prose .float-left { float: left; margin-right: 1.5rem; margin-bottom: 0.5rem; clear: left; }
         .prose figure { margin: 0; }
         .prose figcaption { text-align: center; font-size: 0.875rem; color: #6b7280; margin-top: 0.5rem; }
         .dark .prose figcaption { color: #9ca3af; }
+
+        /* FIX: Reset margins for images inside custom layouts to remove extra space */
+        .prose .float-right img, .prose .float-left img, .prose .grid img, .prose figure img {
+            margin: 0 !important;
+        }
 
         /* Flashcard Styles */
         .flashcard-container { perspective: 1000px; height: 200px; }
@@ -1450,11 +1455,11 @@
                 html = `
 <div class="grid grid-cols-1 md:grid-cols-2 gap-4 my-4">
   <figure>
-    <img src="${url1}" class="w-full rounded-lg shadow h-48 object-cover">
+    <img src="${url1}" class="w-full rounded-lg shadow h-auto">
     ${cap1 ? `<figcaption class="text-center text-xs text-gray-500 mt-1">${cap1}</figcaption>` : ''}
   </figure>
   <figure>
-    <img src="${url2}" class="w-full rounded-lg shadow h-48 object-cover">
+    <img src="${url2}" class="w-full rounded-lg shadow h-auto">
     ${cap2 ? `<figcaption class="text-center text-xs text-gray-500 mt-1">${cap2}</figcaption>` : ''}
   </figure>
 </div>
