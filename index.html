@@ -114,8 +114,13 @@
         .dark .prose figcaption { color: #9ca3af; }
 
         /* FIX: Reset margins for images inside custom layouts to remove extra space */
-        .prose .float-right img, .prose .float-left img, .prose .grid img, .prose figure img {
+        .prose .float-right img, .prose .float-left img, .prose .grid img {
             margin: 0 !important;
+        }
+        /* UPDATED FIX: Center Block - Auto Horizontal Margins for centering, 0 Vertical to prevent gaps */
+        .prose figure img {
+            margin: 0 auto !important;
+            display: block; 
         }
 
         /* Flashcard Styles */
@@ -1440,7 +1445,7 @@
 
                 html = `
 <figure class="w-full my-4">
-  <img src="${url}" class="mx-auto rounded-lg shadow max-h-96" alt="${cap}">
+  <img src="${url}" class="mx-auto rounded-lg shadow max-h-96 block" alt="${cap}">
   ${cap ? `<figcaption class="text-center text-sm text-gray-500 mt-1 italic">${cap}</figcaption>` : ''}
 </figure>
 `;
